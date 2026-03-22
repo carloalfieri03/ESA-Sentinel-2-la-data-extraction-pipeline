@@ -1,0 +1,44 @@
+# ========================
+# MAC OS FILES
+# ========================
+# The Mac operating system creates these hidden files automatically, 
+# and you never want to upload them to GitHub.
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ========================
+# VIRTUAL ENVIRONMENTS
+# ========================
+# Ignore all virtual environment folders (including the one uv made)
+.venv/
+venv/
+env/
+
+#### I JSON e CSV SONO TROPPO PESANTI
+raw_sentinel_data.json
+*.json
+*.csv
+# ========================
+# PYTHON CACHE & COMPILED FILES
+# ========================
+# Python creates these automatically to run code faster. 
+# They are useless to anyone else.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ========================
+# SECRETS & PASSWORDS
+# ========================
+# VERY IMPORTANT: Never upload API keys or passwords!
+.env
+*.pem
+secrets.json
+
+# ========================
+# IDE & EDITOR FILES
+# ========================
+# Ignores VS Code's local workspace settings
+.vscode/

@@ -42,3 +42,9 @@ secrets.json
 # ========================
 # Ignores VS Code's local workspace settings
 .vscode/
+
+# ========================
+# ENV FILES
+# ========================
+# Ignores .env file
+.env

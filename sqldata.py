@@ -5,7 +5,7 @@ target_images = {
     "B02": "10m", "B03": "10m", "B04": "10m", 
     "B08": "10m", "TCI": "10m", "SCL": "20m"}
 # 1. Load the local raw data
-with open("raw_sentinel_data.json", "r") as f:
+with open("data/raw_sentinel_data.json", "r") as f:
     data = json.load(f)
 
 # 2. Extract only what we need for the SQL Relational Schema
@@ -70,6 +70,6 @@ for item in data:
 #  CSV
 df = pd.DataFrame(rows)
 df_acq = pd.DataFrame(rows_images)
-df.to_csv("mysql_import.csv", index=False)
-df_acq.to_csv("mysql_images.csv", index=False)
+df.to_csv("data/mysql_acquisition.csv", index=False)
+df_acq.to_csv("data/mysql_images.csv", index=False)
 print("CSV generated!")

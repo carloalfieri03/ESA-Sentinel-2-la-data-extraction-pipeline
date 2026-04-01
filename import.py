@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 import time
 
-REDOWNLOAD = False
+REDOWNLOAD = True # set this to true 
 
-files_imported=['raw_sentinel_data.json','single_file.json','mysql_import.csv','sentinel_metadata.json']
+files_imported=['data/raw_sentinel_data.json','data/single_file.json','data/mysql_import.csv','data/sentinel_metadata.json']
 def clean_imports(clean_targets):
      for file in clean_targets:
           objective=Path(file)
@@ -18,8 +18,8 @@ if REDOWNLOAD:
     clean_imports(files_imported)
     print('cleaned all donwloaded files')
 
-json_file=Path("raw_sentinel_data.json")
-single_json=Path("single_file.json")
+json_file=Path("data/raw_sentinel_data.json")
+single_json=Path("data/single_file.json")
 
 if json_file.exists() or single_json.exists() :
      print(f'data already imported check {json_file.stem} and {single_json.stem}')
@@ -36,35 +36,47 @@ else:
     print("Connecting to Copernicus STAC API...")
     catalog = pystac_client.Client.open("https://stac.dataspace.copernicus.eu/v1/")
 
-    # 3. Search  query using the coordinates, type of satellite and  timespan
-    print("Fetching 5 years of metadata (this may take a minute or two)...")
-    search = catalog.search(
-        collections=["sentinel-2-l2a"],
-        intersects=coordinates,  # <--- Using your polygon here!
-        datetime="2020-01-01/2024-12-31" 
-    )
-
     items_list = []
-    print("Starting throttled extraction...")
+    years = ["2020", "2021", "2022", "2023", "2024"]
+    print("Starting chuncked extraction to avoid timeout...")
 
-    for item in search.items():
-        items_list.append(item.to_dict())
-        # Every 50 items, take a small 1-second break
-        if len(items_list) % 50 == 0:
-            print(f"Fetched {len(items_list)} items... resting...")
-            time.sleep(1)
+    for year in years:
+        time_window = f"{year}-01-01/{year}-12-31"
+        print(f"\n--- Fetching metadata for {year} ---")
+        
+        search = catalog.search(
+            collections=["sentinel-2-l2a"],
+            intersects=coordinates,
+            datetime=time_window 
+        )
 
-    print(f"Extraction complete! Found {len(items_list)} satellite image records.")
+        try:
+            for item in search.items():
+                items_list.append(item.to_dict())
+                
+                # Every 50 items, take a small 1-second break
+                if len(items_list) % 50 == 0:
+                    print(f"Fetched {len(items_list)} items total... resting...")
+                    time.sleep(1)
+                    
+        except Exception as e:
+            # If a 504 happens anyway, it won't crash the script
+            print(f"Warning: Hit an error during {year}: {e}")
+            print("Server might be busy. Moving to the next chunk...")
+            time.sleep(5) # Let the server cool down before the next year
 
-    import json
+    print(f"\nExtraction complete! Found {len(items_list)} satellite image records.")
 
+    # Only save if we actually found items
+    if items_list:
+        Path("data").mkdir(parents=True, exist_ok=True)
 
-    with open("single_file.json", "w") as sf:
-        json.dump(items_list[0], sf, indent=4)
+        with open("data/single_file.json", "w") as sf:
+            json.dump(items_list[0], sf, indent=4)
 
-    # Save the entire 5-year dataset to your main file
-    with open("raw_sentinel_data.json", "w") as f:
-        json.dump(items_list, f, indent=4)
+        with open("data/raw_sentinel_data.json", "w") as f:
+            json.dump(items_list, f, indent=4)
 
-    print("Data successfully downloaded to raw_sentinel_data.json. You can now close the API connection!")
-
+        print("Data successfully downloaded to raw_sentinel_data.json. You can now close the API connection!")
+    else:
+        print("No data was fetched. Please check the API status.")

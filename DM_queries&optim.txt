@@ -1,0 +1,473 @@
+GROUP N.49 : ALFIERI CARLO ALBERTO (2263545), SORRENTINO MARIAPIA (2268884)
+
+
+------------------------------------------------------------------------------------------------
+
+UNCONSTRAINED SCHEMA CREATION
+
+CREATE TABLE Acquisitions (
+    acquisition_id VARCHAR(255),
+    acquisition_date TIMESTAMP,
+    bbox TEXT,
+    platform VARCHAR(50),
+    gsd INT,
+    grid_code VARCHAR(50),
+    instruments TEXT,
+    datatake_id VARCHAR(255),
+    processing_facility VARCHAR(100)
+);
+
+CREATE TABLE Land (
+    acquisition_id VARCHAR(255),
+    water_pct DOUBLE PRECISION,
+    vegetation_pct DOUBLE PRECISION,
+    dark_area_pct DOUBLE PRECISION,
+    not_vegetated_pct DOUBLE PRECISION,
+    nodata_pct DOUBLE PRECISION,
+    unclassified DOUBLE PRECISION,
+    snow_pct DOUBLE PRECISION
+);
+
+CREATE TABLE Cloud (
+    acquisition_id VARCHAR(255),
+    high_proba_clouds DOUBLE PRECISION,
+    medium_proba_clouds DOUBLE PRECISION,
+    cloud_shadow DOUBLE PRECISION,
+    thin_cirrus DOUBLE PRECISION
+);
+
+CREATE TABLE Illuminance (
+    acquisition_id VARCHAR(255),
+    view_azimuth DOUBLE PRECISION,
+    view_sun_elevation DOUBLE PRECISION,
+    view_incidence_angle DOUBLE PRECISION,
+    sun_elevation DOUBLE PRECISION,
+    orbit_state VARCHAR(50)
+);
+
+CREATE TABLE Images (
+    image_id INT, 
+    acquisition_id VARCHAR(255),
+    band_name VARCHAR(50),
+    resolution VARCHAR(50),
+    file_url TEXT
+);
+
+CREATE TABLE dim_cities (
+    mapping_id SERIAL PRIMARY KEY,
+    grid_code VARCHAR(15) NOT NULL,
+    city_name VARCHAR(50) NOT NULL);
+    
+
+select distinct(grid_code) from acquisitions;
+
+INSERT INTO dim_cities (mapping_id, grid_code, city_name)
+VALUES 
+    (1, 'MGRS-32TQM', 'Rome'),
+    (2, 'MGRS-33TUG', 'Rome'),
+    (3, 'MGRS-33TTG', 'Rome'); 
+
+- this was the only insertion done 'manually' to map the city name, others were performed by loading via PGAdmin interface the csv files extracted from the api as in the scripts provided. 
+ 
+
+------------------------------------------------------------------------------------------------
+
+---- 1st QUERY ----
+- Best months per city to acquire satellite images
+
+SELECT 
+    dc.city_name,
+    EXTRACT(MONTH FROM a.acquisition_date) AS month_of_year,
+    COUNT(DISTINCT a.acquisition_id) AS total_historical_images, 
+    AVG(c.high_proba_clouds + c.medium_proba_clouds + c.thin_cirrus + c.cloud_shadow) AS avg_obscuration_score,
+    AVG(l.sun_elevation) AS avg_sun_elevation
+FROM acquisitions a
+JOIN cloud c ON a.acquisition_id = c.acquisition_id
+JOIN illuminance l ON a.acquisition_id = l.acquisition_id
+JOIN dim_cities dc ON a.grid_code = dc.grid_code 
+WHERE dc.city_name= 'Rome'
+GROUP BY 
+    dc.city_name, 
+    EXTRACT(MONTH FROM a.acquisition_date)
+ORDER BY 
+    avg_obscuration_score ASC,
+    avg_sun_elevation DESC;
+
+-- avg query time: 	184 ms
+-- avg execution time: 	1.5 ms
+-- avg planning time: 	3.29 ms
+
+The query calculates for each city the best month of the year calculating an obscuration and a sun elevation score averaging different attributes values for the same months across years. 
+The query is not very efficient since we have to perform several joins, especially with cloud and illuminance table, which impact the most query time. Dim_cities table is made of few rows still and hence is not very expensive in terms of the join being performed. 
+
+------------------------------------------------------------------------------------------------
+
+-- Query optimization 
+	
+-- primary key 
+ALTER TABLE acquisitions ADD PRIMARY KEY (acquisition_id);
+
+--- foreign keys
+ALTER TABLE cloud ADD CONSTRAINT fk_cloud_acq FOREIGN KEY (acquisition_id) 
+REFERENCES acquisitions(acquisition_id) ON DELETE CASCADE;
+
+ALTER TABLE illuminance ADD CONSTRAINT fk_illum_acq FOREIGN KEY (acquisition_id) 
+REFERENCES acquisitions(acquisition_id) ON DELETE CASCADE;
+
+-- index to speed up the joins
+CREATE INDEX idx_cloud_acq_id ON cloud(acquisition_id);
+CREATE INDEX idx_illum_acq_id ON illuminance(acquisition_id);
+
+SELECT 
+    dc.city_name,
+    EXTRACT(MONTH FROM a.acquisition_date) AS month_of_year,
+    COUNT(DISTINCT a.acquisition_id) AS total_historical_images, 
+    AVG(c.high_proba_clouds + c.medium_proba_clouds + c.thin_cirrus + c.cloud_shadow) AS avg_obscuration_score,
+    AVG(l.sun_elevation) AS avg_sun_elevation
+FROM acquisitions a
+JOIN cloud c ON a.acquisition_id = c.acquisition_id
+JOIN illuminance l ON a.acquisition_id = l.acquisition_id
+JOIN dim_cities dc ON a.grid_code = dc.grid_code 
+WHERE dc.city_name= 'Rome'
+GROUP BY 
+    dc.city_name, 
+    EXTRACT(MONTH FROM a.acquisition_date)
+ORDER BY 
+    avg_obscuration_score ASC,
+    avg_sun_elevation DESC
+    
+-- avg query time:  	143.67 ms 	(-4.30 ms)
+-- avg execution time: 	0.32 ms 	(-1.18 ms)
+-- avg planning time: 	0.29 ms 	(-3 ms)
+
+To optimize the query we created primary and foreign keys constraints which acts also as integrity constraints and also added on delete cascade condition to ensure that if a row is deleted from acquisitions table, the same operation will be performed also in other tables. Then we created  an index on the foreign keys since Postgres doesn’t automatically create indexes on foreign keys as instead Mysql does. Hence now we have B-tree indexes that fasten the lookup of rows in our tables. 
+
+In the optimized query, while a full table scan is still required for acquisitions to match with the city_dim table,  for cloud and illuminance table an index scan is performed, afterwards the group by and order by are performed and finally the select calculations.
+
+--------------------------------------------------------------------------------
+
+---- 2nd QUERY ----
+-- Seasonality index trends per city
+
+SELECT c.city_name, 
+				CASE 
+        WHEN EXTRACT(MONTH FROM acquisition_date) IN (12, 1, 2) THEN 'Winter'
+        WHEN EXTRACT(MONTH FROM acquisition_date) IN (3, 4, 5) THEN 'Spring'
+        WHEN EXTRACT(MONTH FROM acquisition_date) IN (6, 7, 8) THEN 'Summer'
+        WHEN EXTRACT(MONTH FROM acquisition_date) IN (9, 10, 11) THEN 'Autumn'
+        END AS season,avg(vegetation_pct) as vegetation_avg, avg(water_pct) as water_avg, 
+        avg(not_vegetated_pct) as not_vegetated_avg,avg(snow_pct) as snow_avg
+  
+  FROM acquisitions a 
+  join land l
+  on a.acquisition_id=l.acquisition_id
+  join dim_cities c
+  on a.grid_code=c.grid_code
+  group by season, c.city_name;
+
+-- avg query time: 		140.33 ms
+-- avg execution time: 	0.11 ms
+-- avg planning time: 	0.45 ms
+
+The query computes for each city some seasonal statistics of the image , calculating for each season the average coverages of the images. This query computes some heavy calculations at runtime, extracting and groping by the month and calculating the seasonal averages. 
+
+-----------------------------------------------------------------------------
+
+-- Query optimization 
+  
+CREATE MATERIALIZED VIEW city_season_averages AS
+SELECT 
+    c.city_name, 
+    CASE 
+        WHEN EXTRACT(MONTH FROM a.acquisition_date) IN (12, 1, 2) THEN 'Winter'
+        WHEN EXTRACT(MONTH FROM a.acquisition_date) IN (3, 4, 5) THEN 'Spring'
+        WHEN EXTRACT(MONTH FROM a.acquisition_date) IN (6, 7, 8) THEN 'Summer'
+        WHEN EXTRACT(MONTH FROM a.acquisition_date) IN (9, 10, 11) THEN 'Autumn'
+    END AS season, 
+    avg(l.vegetation_pct) as vegetation_avg, 
+    avg(l.water_pct) as water_avg, 
+    avg(l.not_vegetated_pct) as not_vegetated_avg,
+    avg(l.snow_pct) as snow_avg
+FROM acquisitions a 
+JOIN land l ON a.acquisition_id = l.acquisition_id
+JOIN dim_cities c ON a.grid_code = c.grid_code
+GROUP BY season, c.city_name
+
+select * from city_season_averages
+
+-- avg query time: 		210 ms 		(+69.67 ms)
+-- avg execution time: 	0.03 ms 	(-0.08 ms)
+-- avg planning time:  	0.04 ms 	(-0.41 ms)
+
+To optimize the query we resorted on a materialized view since  we can assume that this  seasonality data are information that can be useful to be accessed frequently. Also since this dataset is conceived as a long term repository to access data and images acquired over long time ranges, and hence not with daily or frequent tables updates, the creation of a materialized view is a very useful solution. In fact,  every time new values are inserted/deleted  the materialized view need to be updated and in case of daily updates this would become not much more convenient that retrieving these data at query time when needed.
+
+---------------------------------------------------------------------------------
+
+---- 3rd QUERY ----
+-- Data loss events 
+
+SELECT 
+    a.platform,
+    EXTRACT(YEAR FROM a.acquisition_date) AS acq_year,
+    EXTRACT(MONTH FROM a.acquisition_date) AS acq_month,
+    AVG(l.nodata_pct) AS avg_monthly_data_loss,
+    MAX(l.nodata_pct) AS max_data_loss
+FROM acquisitions a
+JOIN land l ON a.acquisition_id = l.acquisition_id
+WHERE EXTRACT(YEAR FROM acquisition_date) = 2024
+GROUP BY 
+    acq_year, 
+    acq_month,
+    a.platform
+HAVING (MAX(l.nodata_pct) - AVG(l.nodata_pct)) > 35.0 
+ORDER BY max_data_loss DESC
+
+-- avg query time: 		272.3 ms 
+-- avg execution time: 	1.42 ms 
+-- avg planning time: 	0.94 ms
+
+The query extract the data loss events for the year 2024 where a data loss event is defined as a 35% difference between the maximum percentage of no data for an image with the average value for that month. 
+Along with the calculations a critical point of this query is the extraction of the acquisition year and month, which we have already seen in the previous queries to be useful to cluster and analyze our data. Hence creating a composite index on year and month can be very useful. 
+
+-----------------------------------------------------------------------------
+
+-- Query optimization 
+	
+---- time index
+  
+CREATE INDEX idx_acq_timeline ON acquisitions (
+    EXTRACT(YEAR FROM acquisition_date), 
+    EXTRACT(MONTH FROM acquisition_date),
+    platform)
+
+SELECT 
+    a.platform,
+    EXTRACT(YEAR FROM a.acquisition_date) AS acq_year,
+    EXTRACT(MONTH FROM a.acquisition_date) AS acq_month,
+    AVG(l.nodata_pct) AS avg_monthly_data_loss,
+    MAX(l.nodata_pct) AS max_data_loss
+FROM acquisitions a
+JOIN land l ON a.acquisition_id = l.acquisition_id
+WHERE EXTRACT(YEAR FROM acquisition_date) = 2024
+GROUP BY 
+    acq_year, 
+    acq_month,
+    a.platform
+HAVING (MAX(l.nodata_pct) - AVG(l.nodata_pct)) > 35.0 
+ORDER BY max_data_loss DESC
+    
+-- avg query time: 		356 ms 		(-27.99 ms) 
+-- avg execution time: 	0.68 ms 	(-0.74 ms) 
+-- avg planning time: 	0.64 ms 	(-0.30 ms)  
+
+By creating the composite B-Tree index idx_acq_timeline the filtering by year in the where clause since now in the B-Tree index file there are pointers to the acquisition table data sorted by year and month.
+
+-----------------------------------------------------------------------------
+
+---- 4th QUERY ----
+-- City with above average vegetation events
+
+CREATE MATERIALIZED VIEW monthly_vegetation_trend AS
+SELECT 
+    c.city_name,
+    EXTRACT(YEAR FROM a.acquisition_date) AS acq_year,
+    EXTRACT(MONTH FROM a.acquisition_date) AS acq_month,
+    AVG(l.vegetation_pct) AS avg_veg,
+    COUNT(a.acquisition_id) AS image_count
+FROM acquisitions a
+JOIN land l ON a.acquisition_id = l.acquisition_id
+LEFT JOIN dim_cities c ON c.grid_code = a.grid_code
+GROUP BY c.city_name, acq_year, acq_month;
+
+SELECT 
+    mt.city_name, 
+    COUNT(*) AS total_above_average_months
+FROM monthly_vegetation_trend mt
+JOIN (
+    SELECT 
+        city_name, 
+        acq_month, 
+        AVG(avg_veg) AS baseline_avg
+    FROM monthly_vegetation_trend
+    GROUP BY city_name, acq_month
+) baselines 
+  ON mt.city_name = baselines.city_name 
+  AND mt.acq_month = baselines.acq_month
+WHERE mt.avg_veg > baselines.baseline_avg
+GROUP BY mt.city_name
+ORDER BY total_above_average_months DESC;
+
+The query extracts for each city the total number of above average vegetation events. Before we use a materialized view to calculate and store in one place all the historical average per year and month for each city, then at runtime the number of vegetation periods above average is calculated, comparing the same season and city since  making a year long average comparison would have been biased, neglecting some seasonality patterns.
+
+Then with the join basically we run a subquery which extracts the baseline comparison for every city. With this method Sql runs before the inner query and then the seconds and puts them in relation via hashing. This same operation could have been done also with a correlated subquery using a where clause, but then this comparison operation would have been performed row by row resulting in longer query time.
+
+-- avg query time: 		159 ms
+-- avg execution time: 	0.1 ms
+-- avg planning time: 	0.31 ms
+
+-----------------------------------------------------------------------------
+
+---- 5th QUERY ----
+-- Data and quality images extractor
+
+SELECT band_name,
+    i.file_url
+FROM images i
+JOIN acquisitions a ON i.acquisition_id = a.acquisition_id
+JOIN cloud c ON i.acquisition_id = c.acquisition_id
+JOIN land l ON i.acquisition_id = l.acquisition_id
+WHERE 
+    a.acquisition_date >= '2023-07-01' 
+    AND a.acquisition_date <= '2023-08-31'
+    AND (c.high_proba_clouds + c.medium_proba_clouds + c.thin_cirrus + c.cloud_shadow) < 15.0
+
+-- avg query time: 		144 ms
+-- avg execution time: 	13.33 ms
+-- avg planning time: 	0.97 ms
+
+The query extracts the band type and the url for all the images acquired between July and August 2023, selecting only the images with a good visibility
+
+-----------------------------------------------------------------------------
+
+---- 6th QUERY ----
+-- Satellite performance comparison
+
+SELECT a.platform, COUNT(a.acquisition_id) AS total_acquisitions,
+  AVG(l.water_pct) AS avg_water,
+  AVG(l.vegetation_pct) AS avg_vegetation,
+  AVG(l.not_vegetated_pct) AS avg_not_vegetated,
+  AVG(l.snow_pct) AS avg_snow,
+  AVG(l.dark_area_pct) AS avg_dark_area,
+  AVG(l.nodata_pct) AS avg_nodata,
+  AVG(l.unclassified) AS avg_unclassfied
+FROM acquisitions AS a
+NATURAL JOIN land AS l 
+GROUP BY a.platform
+HAVING COUNT(a.acquisition_id) > 10
+ORDER BY total_acquisitions;
+
+-- avg query time: 		259.66 ms
+-- avg execution time: 	0.49 ms 
+-- avg planning time: 	1.61 ms 
+
+We wanted to validate the reliability of our data by comparing the two satellite platforms involved, using a NATURAL JOIN between the acquisitions and land tables, grouping the data by platform and calculating the average percentages for all land cover type. We found that both the satellites returned almost identical land 
+averages across our dataset, proving that both are perfectly calibrated and our data is reliable.
+
+-----------------------------------------------------------------------------
+
+---- 7th QUERY ----
+--- Optimal water visibility
+
+SELECT a.acquisition_id, a.acquisition_date
+FROM acquisitions a
+NATURAL JOIN land l
+WHERE l.water_pct > 30
+EXCEPT
+SELECT a.acquisition_id, a.acquisition_date
+FROM acquisitions a
+NATURAL JOIN illuminance i
+WHERE i.sun_elevation < 30 
+OR i.orbit_state IN ( 
+	SELECT orbit_state
+	FROM illuminance 
+	WHERE orbit_state = 'ascending'
+	);
+	
+-- avg query time: 		174.66 ms
+-- avg execution time: 	2.02 ms
+-- avg planning time: 	6.76 ms
+
+Our goal was to isolate high-quality images. In order to do so, the database engine first computes the top query, grabbing every image that has more than 30% water. Then, it executes the bottom query, building a list of ‘invalid’ images, thus the ones with bad lighting or taken during nigh-time ascending orbits. In the end, it applies the EXCEPT operator, essentially performing a subtraction between good images from Step 1 and invalid images from Step 2.
+
+-----------------------------------------------------------------------------
+
+---- 8th QUERY ----
+-- Image scientific field classification
+
+SELECT a.platform,
+  CASE
+      WHEN i.band_name = 'B02' THEN 'Water & Costal Analysis (B02)'
+      WHEN i.band_name = 'B03' THEN 'Vegetation & Urban Analysis (B03)'
+      WHEN i.band_name IN ('B04', 'B08') THEN 'Healthy Green Vegetation Analysis (B04 & B08)'
+  END AS scientific_application,
+  COUNT(i.band_name) AS total_files
+FROM acquisitions a 
+NATURAL JOIN images i
+WHERE i.band_name IN ('B02', 'B03', 'B04', 'B08')
+GROUP BY a.platform,
+  CASE 
+      WHEN i.band_name = 'B02' THEN 'Water & Costal Analysis (B02)'
+      WHEN i.band_name = 'B03' THEN 'Vegetation & Urban Analysis (B03)'
+      WHEN i.band_name IN ('B04', 'B08') THEN 'Healthy Green Vegetation Analysis (B04 & B08)'
+  END
+
+-- avg query time: 		131.33 ms
+-- avg execution time: 	4.84 ms
+-- avg planning time:  	0.17 ms
+
+We wanted to create a Scientific Image Inventory Report for Scientific Application, using a CASE WHEN statement within the GROUP BY in order to classify the applications and perform the aggregation efficiently into a single table scan. Because environmental scientists would query it frequently, this could be wrapped in a materialized view, allowing them to access the classifications instantly without hitting the raw tables.
+
+-----------------------------------------------------------------------------
+
+---- 9th QUERY ----
+-- Images extraction via cloud filtering
+
+SELECT a.acquisition_id, a.acquisition_date, a.platform
+FROM acquisitions a
+WHERE NOT EXISTS (
+	SELECT *
+	FROM cloud c
+	WHERE c.acquisition_id = a.acquisition_id
+	AND c.high_proba_clouds > 50
+);
+
+-- avg query time: 		344 ms
+-- avg execution time: 	0.61 ms 
+-- avg planning time: 	0.21 ms 
+
+This query is our cloud filter. The goal is to drop any image with a cloud coverage percentage greater than 50%, using a NOT EXISTS subquery. 
+However, this forced the database to perform a slow, row by row scan for every single image.
+ 
+-----------------------------------------------------------------------------
+
+-- Query optimization
+
+-- cloud filtering index
+CREATE INDEX idx_cloud_filter ON cloud(high_proba_clouds, acquisition_id);
+
+SELECT a.acquisition_id, a.acquisition_date, a.platform
+FROM acquisitions a
+LEFT JOIN cloud c 
+  ON a.acquisition_id = c.acquisition_id
+  AND c.high_proba_clouds > 50
+WHERE c.acquisition_id IS NULL
+
+-- avg query time: 		275.66 ms 	(-68.34 ms) 
+-- avg execution time: 	0.43 ms 	(-0.18 ms)
+-- avg planning time: 	0.35 ms 	(+0.14 ms) 
+
+To optimize the query, we built a composite index on the probability cloud coverage and the acquisition id and we rewrote the query using a LEFT JOIN … IS NULL Anti_Join. Basically, the left join 
+attaches a cloud record to every single acquisition only if the condition is encountered. Thus, our clear images fail the join, leaving their cloud columns blank or NULL. Then, the WHERE IS … NULL clause drops all the images that successfully joined with bad clouds, leaving us with the clear images.
+
+-----------------------------------------------------------------------------
+
+---- 10th QUERY ----
+-- Greenest year 
+SELECT EXTRACT(YEAR FROM a.acquisition_date) AS best_acquisition_year,
+	COUNT(a.acquisition_id) AS total_acquisitions,
+	AVG(l.vegetation_pct) AS avg_vegetation
+FROM acquisitions a
+JOIN land l ON a.acquisition_id = l.acquisition_id  
+GROUP BY EXTRACT(YEAR FROM a.acquisition_date)
+ORDER BY avg_vegetation DESC
+LIMIT 1
+
+-- avg query time: 		158 ms
+-- avg execution time: 	4.17 ms 
+-- avg planning time: 	3.46 ms
+
+We wanted to identiFy the greenest year on record for a possible future long-term analyses. Initially, we thought to build this using a 
+heavy nested subquery with a HAVING ≥ ALL clause. But we optimized it by grouping the data by year, sorting the averages in descending order, 
+and applying a LIMIT 1 that returns the first row. Thus, instead of recalculating averages multiple times for comparisons, it computes a 
+single pass aggregation, retrieving the data instantly.
+

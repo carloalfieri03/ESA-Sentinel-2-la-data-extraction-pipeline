@@ -19,8 +19,7 @@ for item in data:
 # satellite acquisitons data
         "acquisition_id": item.get('id'),
         "bbox": item.get('bbox'),
-        "date": props.get('datetime'),
-        "platform": props.get('platform'),
+        "acquisition_date": props.get('datetime'), 
         "gsd": props.get('gsd'),
         "grid_code":props.get('grid:code'),
         'instruments': props.get('instruments'),
@@ -49,32 +48,33 @@ for item in data:
         "view_incidence_angle": props.get('view:incidence_angle', 0),
         "sun_elevation": props.get('view:sun_elevation', 0),
         "orbit_state": props.get('sat:orbit_state', 'descending') })
+    
+    # Group all image bands for this single acquisition
+    image_document = {
+        "acquisition_id": item.get('id'),
+        "acquisition_date": props.get('datetime'),
+        "images": [] 
+    }
 
     for band, res in target_images.items():
-        # Match the band name (e.g., B04_10m)
-            asset_key = f"{band}_{res}" if band != "SCL" and band != "TCI" else band
+        asset_key = f"{band}_{res}" if band not in ["SCL", "TCI"] else band
+        asset_obj = item.get('assets', {}).get(asset_key, {})
+        file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
 
-            asset_obj = item.get('assets', {}).get(asset_key, {})
-            # Navigate to the HTTPS link 
-            file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
+        if file_url:
+            image_document["images"].append({
+                "band_name": band,
+                "resolution": res,
+                "file_url": file_url
+            })
 
-            if file_url:
-                rows_images.append({
-                    "acquisition_id": item.get('id'),
-                    "band_name": band,
-                    "resolution": res,
-                    "file_url": file_url
-                })
+    if image_document["images"]:
+        rows_images.append(image_document)
 
 
-#  CSV
 
-df = pd.DataFrame(rows)
+# schema for the mongo collections 
 
-# 1. Rename 'date' to 'acquisition_date' for the main table
-df.rename(columns={'date': 'acquisition_date'}, inplace=True)
-
-# columns of the sql tables to extract then individual csvs for each table
 land_char=[
     "acquisition_id", "acquisition_date", "bbox", 
     "grid_code",  "water_pct", "vegetation_pct", "dark_area_pct", 
@@ -87,50 +87,22 @@ acquisitions=[ "acquisition_id", "acquisition_date", "bbox", "platform", "gsd",
     "view_incidence_angle", "sun_elevation", "orbit_state"
 ]
 
-images=[ "acquisition_id", "acquisition_date", "band_name", "resolution", "file_url"]
+images=[ "acquisition_id", "acquisition_date", "images" ]     
      
-     
+def export_to_ndjson(filename, data_list, target_columns):
+    with open(filename, "w") as f:
+        for row in data_list:
+            # dictionary containing keys defined in target
+            filtered_doc = {key: row.get(key) for key in target_columns}
+            
+            # json.dumps converts the single dict to a string 
+            f.write(json.dumps(filtered_doc) + "\n") # \n is for NDJSON, one line one json object, more memory efficient. One line one document
 
-acq_columns = [
-    "acquisition_id", "acquisition_date", "bbox", "platform", "gsd", 
-    "grid_code", "instruments", "datatake_id", "processing_facility"
-]
+# files 
+export_to_ndjson("data/land_char.ndjson", rows, land_char)
+export_to_ndjson("data/acquisitions.ndjson", rows, acquisitions)
+export_to_ndjson("data/images.ndjson", rows_images, images)
 
-land_columns = [
-    "acquisition_id", "water_pct", "vegetation_pct", "dark_area_pct", 
-    "not_vegetated_pct", "nodata_pct", "unclassified", "snow_pct"
-]
+print("Successfully created three NDJSON files!")
 
-cloud_columns = [
-    "acquisition_id", "high_proba_clouds", "medium_proba_clouds", 
-    "cloud_shadow", "thin_cirrus"
-]
-
-illuminance_columns = [
-    "acquisition_id", "view_azimuth", "view_sun_elevation", 
-    "view_incidence_angle", "sun_elevation", "orbit_state"
-]
-
-image_columns = [
-    "acquisition_id", "band_name", "resolution", "file_url"
-]
-
-
-# Filter the main DataFrame 
-df_acquisitions = df[acq_columns]
-df_land = df[land_columns]
-df_cloud = df[cloud_columns]
-df_illuminance = df[illuminance_columns]
-
-
-df_images = pd.DataFrame(rows_images)
-df_images = df_images[image_columns] 
-
-# Export everything to CSV 
-df_acquisitions.to_csv("data/mysql_acquisition.csv", index=False)
-df_land.to_csv("data/mysql_land.csv", index=False)
-df_cloud.to_csv("data/mysql_cloud.csv", index=False)
-df_illuminance.to_csv("data/mysql_illuminance.csv", index=False)
-df_images.to_csv("data/mysql_images.csv", index=False)
-
-print("CSVs generated")
+print("NDJON generated")

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import time
 
-REDOWNLOAD = True # set this to true 
+REDOWNLOAD = True # set to true to restart download and delete existing json files
 
 files_imported=['data/raw_sentinel_data.json','data/single_file.json','data/mysql_import.csv','data/sentinel_metadata.json']
 def clean_imports(clean_targets):
@@ -28,9 +28,13 @@ else:
     coordinates = {
         "type": "Polygon",
         "coordinates": [
+           #milan#
+           #[[9.297867,45.482281],[9.264908,45.543389],[9.106979,45.537137],[9.07608,45.451461],[9.197617,45.423998],[9.297867,45.482281]]
+            #rome
             [[12.314987, 41.797936], [12.66861, 41.797936], [12.66861, 42.005938], [12.314987, 42.005938], [12.314987, 41.797936]]
         ]
     }
+
 
     # 2. Connect to Copernicus API
     print("Connecting to Copernicus STAC API...")
@@ -65,7 +69,7 @@ else:
             print("Server might be busy. Moving to the next chunk...")
             time.sleep(5) # Let the server cool down before the next year
 
-    print(f"\nExtraction complete! Found {len(items_list)} satellite image records.")
+    print(f"\nExtraction complete. Found {len(items_list)} satellite image records.")
 
     # Only save if we actually found items
     if items_list:
@@ -77,6 +81,6 @@ else:
         with open("data/raw_sentinel_data.json", "w") as f:
             json.dump(items_list, f, indent=4)
 
-        print("Data successfully downloaded to raw_sentinel_data.json. You can now close the API connection!")
+        print("Data successfully downloaded to raw_sentinel_data.json")
     else:
-        print("No data was fetched. Please check the API status.")
+        print("No data fetched. Please check API.")

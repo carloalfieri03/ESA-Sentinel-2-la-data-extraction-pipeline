@@ -1,9 +1,16 @@
 import json
 import pandas as pd
+from datetime import datetime
 
 target_images = {
     "B02": "10m", "B03": "10m", "B04": "10m", 
     "B08": "10m", "TCI": "10m", "SCL": "20m"}
+
+def get_season(month):   
+    if month in (12, 1, 2): return "Winter"    
+    if month in (3, 4, 5):  return "Spring"    
+    if month in (6, 7, 8):  return "Summer"    
+    return "Autumn"
 
 # open the raw json
 with open("data/raw_sentinel_data.json", "r") as f:
@@ -14,11 +21,19 @@ rows_images= []
 for item in data:
     props = item['properties']
     stats = props.get('statistics', {})
+    
+    raw_date = props.get('datetime')
+    acq_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00')) # date formatting
+    month = acq_date.month
+
     rows.append ({
 
 # satellite acquisitons data
         "acquisition_id": item.get('id'),
-        "bbox": item.get('bbox'),
+        "bbox": item.get('bbox'),       
+        "acq_month": month, 
+        "acq_year": acq_date.year,              
+        "acq_season": get_season(month), 
         "acquisition_date": props.get('datetime'), 
         "gsd": props.get('gsd'),
         "grid_code":props.get('grid:code'),
@@ -76,16 +91,15 @@ for item in data:
 # schema for the mongo collections 
 
 land_char=[
-    "acquisition_id", "acquisition_date", "bbox", 
+    "acquisition_id", "acq_month", "acq_year", "acq_season", "bbox", 
     "grid_code",  "water_pct", "vegetation_pct", "dark_area_pct", 
     "not_vegetated_pct", "snow_pct"]
 
-acquisitions=[ "acquisition_id", "acquisition_date", "bbox", "platform", "gsd", 
+acquisitions=[ "acquisition_id", "acquisition_date","acq_year", "acq_season", "bbox", "platform", "gsd", 
     "grid_code", "instruments", "datatake_id", "processing_facility", "nodata_pct", "unclassified",
     "high_proba_clouds", "medium_proba_clouds",  "cloud_shadow", "thin_cirrus", 
       "view_azimuth", "view_sun_elevation", 
-    "view_incidence_angle", "sun_elevation", "orbit_state"
-]
+    "view_incidence_angle", "sun_elevation", "orbit_state"]
 
 images=[ "acquisition_id", "acquisition_date", "images" ]     
      

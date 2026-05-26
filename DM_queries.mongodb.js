@@ -15,6 +15,11 @@ db.runCommand(
 // -------------------------------------------------------------------------------------
 // ---- 1st QUERY: Best months per city to acquire satellite images ----
 
+// Create an index to instantly find all acquisitions for a specific city 
+// without having to scan the entire collection.
+
+db.acquisitions.createIndex({ "city_name": 1 });
+
 db.acquisitions.aggregate([
   
   // 1. Filter only for Rome
@@ -44,10 +49,15 @@ db.acquisitions.aggregate([
       avg_sun_elevation: -1 
     } 
   }
-]);
+]).explain("executionStats");
 
 // Zero $lookup (JOIN) since city_name, clouds, and illuminance data are all stored directly in the acquisitions collection!
 // The total_obscuration was pre-computed in the Python script, so we don't need to do any calculations at runtime. We can just average it out directly.
+
+// - TIME EXECUTION: executionTimeMillis: NumberInt('18') before index, NumberInt('7') after index
+
+// Creating the index on city_name allows MongoDB to quickly find all documents related to a specific city 
+// without having to scan the entire acquisitions collection, which significantly reduces the execution time of the query.
 
 // -------------------------------------------------------------------------------------
 // ---- 2nd QUERY: Seasonality index trends per city
@@ -192,6 +202,14 @@ db.land_analytics.aggregate([
 // ---------------------------------------------------------------------------------------
 // ---- 5th QUERY: Data and quality images extractor ----
 
+// We created an index using acquisitions.acquisition_date and clouds.total_obscuration
+// to speed up the filtering by date first and cloud coverage then. 
+
+db.acquisitions.createIndex({ 
+  "acquisition_date": 1, 
+  "clouds.total_obscuration": 1 
+});
+
 db.acquisitions.aggregate([
   // 1. Filter by the date range and our pre-calculated cloud obscuration
   { 
@@ -217,14 +235,21 @@ db.acquisitions.aggregate([
       file_url: "$images.file_url"
     }
   }
-]);
+]).explain("executionStats");
 
 // Since the clouds and acquisition date are stored directly in the acquisitions collection, 
 // we can filter by them directly in the $match stage without needing to do any joins or runtime calculations.
 
+// - TIME EXECUTION: executionTimeMillis: NumberInt('4') before index, NumberInt('1') after index
+
+
 // ---------------------------------------------------------------------------------------
 // ---- 6th QUERY: Satellite performance comparison ----
 // here we have a $lookup because we need to get data both from acquisitions (for the nodata_pct) and from land_analytics (for the vegetation_pct).
+
+// INDEXES; 1 means sort the index in ascending order. This will speed up the $lookup stage since MongoDB can quickly find the matching acquisition_id in both collections without having to do a full scan.
+db.acquisitions.createIndex({ "acquisition_id": 1 });
+db.land_analytics.createIndex({ "acquisition_id": 1 });
 
 db.acquisitions.aggregate([
   // 1. "NATURAL JOIN" - connect the acquisitions collection to the land_analytics collection
@@ -270,12 +295,25 @@ db.acquisitions.aggregate([
   { 
     $sort: { total_acquisitions: 1 } 
   }
-]);
+]).explain("executionStats");
 
 // The $lookup allows us to connect the two collections together using the acquisition_id as a common key.
+// Without using an index on acquisition_id, this query would be very slow because MongoDB would have to do 
+// a full scan of both collections to find the matches.
+
+// - TIME EXECUTION: executionTimeMillis: NumberInt('6056') before index, NumberInt('591') after index
+
+// Creating the index on acquisition_id allows MongoDB to quickly find the matching documents in both collections, 
+// which significantly reduces the execution time of the query.
 
 // ---------------------------------------------------------------------------------------
 // ---- 7th QUERY: Optimal water visibility ----
+
+// Also here we speed up the query with indexes on acquisition_id since we need to join 
+// land_analytics with acquisitions to get the water_pct and the illuminance data together.
+// Furthermore, we created an index on water_pct in land_analytics to quickly filter for good water conditions.
+
+db.land_analytics.createIndex({ "water_pct": 1 });
 
 db.land_analytics.aggregate([
   // 1. SET A: Find images with good water
@@ -316,7 +354,7 @@ db.land_analytics.aggregate([
       acquisition_date: 1 
     } 
   }
-]);
+]).explain("executionStats");
 
 // In this query, we simply look for the good stuff right away instead of trying to find the bad stuff and then subtract it later. We start by filtering for good water conditions, then we join with acquisitions to get the lighting and orbit data, and then we apply the positive conditions for good lighting and orbits directly in the $match stage. This way, we don't need to do any complex set operations or subqueries to exclude the bad conditions later on.
 // We filter for good water conditions first, then we join with acquisitions to get 
@@ -324,6 +362,8 @@ db.land_analytics.aggregate([
 // lighting and orbits directly in the $match stage. 
 // This way, we don't need to do any complex set operations or subqueries to exclude the bad conditions later on. 
 // We just enforce the good conditions from the start!
+
+// - TIME EXECUTION: executionTimeMillis: NumberInt('295') before index, NumberInt('266') after index
 
 // ---------------------------------------------------------------------------------------
 // ---- 8th QUERY: Image scientific field classification ----
@@ -402,6 +442,9 @@ db.acquisitions.aggregate([
 // ---------------------------------------------------------------------------------------
 // ---- 9th QUERY: Images extraction via cloud filtering ----
 
+// We created an index on clouds.high_proba_clouds to instantly find images with good clouds
+db.acquisitions.createIndex({ "clouds.high_proba_clouds": 1 });
+
 // We use .find instead of aggregate since we don't need to do any grouping or complex transformations, 
 // just a simple search.
 db.acquisitions.find(
@@ -418,11 +461,13 @@ db.acquisitions.find(
     acquisition_date: 1, 
     platform: 1 
   }
-);
+).explain("executionStats");
 
 // Since the clouds data is stored directly in the acquisitions collection, 
 // we can just filter by it directly in the .find() method without needing 
 // to do any joins or complex transformations.
+
+// - TIME EXECUTION: executionTimeMillis: NumberInt('5') before index, NumberInt('2') after index
 
 // ---------------------------------------------------------------------------------------
 // ---- 10th QUERY: Greenest year ----

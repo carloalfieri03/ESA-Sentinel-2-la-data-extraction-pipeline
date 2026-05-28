@@ -117,7 +117,7 @@ land_char=[
     "grid_code",  "water_pct", "vegetation_pct", "dark_area_pct", 
     "not_vegetated_pct", "snow_pct"]
 
-acquisitions=[ "acquisition_id", "acquisition_date","acq_year", "acq_season", "bbox","city_name", "platform", "gsd", 
+acquisitions=[ "acquisition_id", "acquisition_date","acq_month","acq_year", "acq_season", "bbox","city_name", "platform", "gsd", 
     "grid_code", "instruments", "datatake_id", "processing_facility", "nodata_pct", "unclassified",
     "high_proba_clouds", "medium_proba_clouds",  "cloud_shadow", "thin_cirrus", 
       "view_azimuth", "view_sun_elevation", 

@@ -55,6 +55,7 @@ for item in data:
         'instruments': props.get('instruments'),
         'datatake_id':props.get('eopf:datatake_id'),
         'processing_facility':props.get('processing:facility'),
+        'city_name':"Rome",
 
  # land data
         "water_pct": stats.get('water', 0.0),
@@ -112,11 +113,11 @@ for item in data:
 # schema for the mongo collections 
 
 land_char=[
-    "acquisition_id", "acq_month", "acq_year", "acq_season", "bbox", 
+    "acquisition_id", "acq_month", "acq_year", "acq_season", "bbox","city_name", 
     "grid_code",  "water_pct", "vegetation_pct", "dark_area_pct", 
     "not_vegetated_pct", "snow_pct"]
 
-acquisitions=[ "acquisition_id", "acquisition_date","acq_year", "acq_season", "bbox", "platform", "gsd", 
+acquisitions=[ "acquisition_id", "acquisition_date","acq_year", "acq_season", "bbox","city_name", "platform", "gsd", 
     "grid_code", "instruments", "datatake_id", "processing_facility", "nodata_pct", "unclassified",
     "high_proba_clouds", "medium_proba_clouds",  "cloud_shadow", "thin_cirrus", 
       "view_azimuth", "view_sun_elevation", 

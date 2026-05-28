@@ -17,7 +17,7 @@ with open("data/raw_sentinel_data.json", "r") as f:
     data = json.load(f)
 ## target json attributes to extract
 rows = []
-rows_images= []
+#rows_images= []
 for item in data:
     props = item['properties']
     stats = props.get('statistics', {})
@@ -26,12 +26,27 @@ for item in data:
     acq_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00')) # date formatting
     month = acq_date.month
 
+     # --- Edit for whole doc of acquisitions ---
+    images_list = []
+    for band, res in target_images.items():
+        asset_key = f"{band}_{res}" if band not in ["SCL", "TCI"] else band
+        asset_obj = item.get('assets', {}).get(asset_key, {})
+        file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
+
+        if file_url:
+            images_list.append({
+                "band_name": band,
+                "resolution": res,
+                "file_url": file_url
+            })
+###################### ------------------ ####################
     rows.append ({
 
 # satellite acquisitons data
         "acquisition_id": item.get('id'),
         "bbox": item.get('bbox'),       
-        "acq_month": month, 
+        "acq_month": month,
+        "platform":props.get('platform'),
         "acq_year": acq_date.year,              
         "acq_season": get_season(month), 
         "acquisition_date": props.get('datetime'), 
@@ -62,30 +77,36 @@ for item in data:
         "view_sun_elevation": props.get('view:sun_elevation', 0),
         "view_incidence_angle": props.get('view:incidence_angle', 0),
         "sun_elevation": props.get('view:sun_elevation', 0),
-        "orbit_state": props.get('sat:orbit_state', 'descending') })
+        "orbit_state": props.get('sat:orbit_state', 'descending'),
+         "images": images_list   ## new add
+         })
+    
+    ### parte vecchia per documenti separati
     
     # Group all image bands for this single acquisition
-    image_document = {
-        "acquisition_id": item.get('id'),
-        "acquisition_date": props.get('datetime'),
-        "images": [] 
-    }
-
-    for band, res in target_images.items():
-        asset_key = f"{band}_{res}" if band not in ["SCL", "TCI"] else band
-        asset_obj = item.get('assets', {}).get(asset_key, {})
-        file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
-
-        if file_url:
-            image_document["images"].append({
-                "band_name": band,
-                "resolution": res,
-                "file_url": file_url
-            })
-
-    if image_document["images"]:
-        rows_images.append(image_document)
-
+  #  image_document = {
+  #      "acquisition_id": item.get('id'),
+  #      "acquisition_date": props.get('datetime'),
+  #      "images": [] 
+  #  }
+#
+  #  for band, res in target_images.items():
+  #      asset_key = f"{band}_{res}" if band not in ["SCL", "TCI"] else band
+  #      asset_obj = item.get('assets', {}).get(asset_key, {})
+  #      file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
+#
+  #      if file_url:
+  #          image_document["images"].append({
+  #              "band_name": band,
+  #              "resolution": res,
+  #              "file_url": file_url
+  #          })
+#
+#
+#
+  #  if image_document["images"]:
+  #      rows_images.append(image_document)
+  #      
 
 
 # schema for the mongo collections 
@@ -99,9 +120,9 @@ acquisitions=[ "acquisition_id", "acquisition_date","acq_year", "acq_season", "b
     "grid_code", "instruments", "datatake_id", "processing_facility", "nodata_pct", "unclassified",
     "high_proba_clouds", "medium_proba_clouds",  "cloud_shadow", "thin_cirrus", 
       "view_azimuth", "view_sun_elevation", 
-    "view_incidence_angle", "sun_elevation", "orbit_state"]
+    "view_incidence_angle", "sun_elevation", "orbit_state","images"]
 
-images=[ "acquisition_id", "acquisition_date", "images" ]     
+#images=[ "acquisition_id", "acquisition_date", "images" ]     
      
 def export_to_ndjson(filename, data_list, target_columns):
     with open(filename, "w") as f:
@@ -113,10 +134,9 @@ def export_to_ndjson(filename, data_list, target_columns):
             f.write(json.dumps(filtered_doc) + "\n") # \n is for NDJSON, one line one json object, more memory efficient. One line one document
 
 # files 
+
 export_to_ndjson("data/land_char.ndjson", rows, land_char)
 export_to_ndjson("data/acquisitions.ndjson", rows, acquisitions)
-export_to_ndjson("data/images.ndjson", rows_images, images)
-
-print("Successfully created three NDJSON files!")
+#export_to_ndjson("data/images.ndjson", rows_images, images)
 
 print("NDJON generated")

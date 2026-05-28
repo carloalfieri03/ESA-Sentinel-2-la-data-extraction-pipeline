@@ -26,19 +26,38 @@ for item in data:
     acq_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00')) # date formatting
     month = acq_date.month
 
-     # --- Edit for whole doc of acquisitions ---
-    images_list = []
+
+    images_dict = {}
+    
     for band, res in target_images.items():
         asset_key = f"{band}_{res}" if band not in ["SCL", "TCI"] else band
         asset_obj = item.get('assets', {}).get(asset_key, {})
         file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
 
         if file_url:
-            images_list.append({
-                "band_name": band,
+            # Use the band name as the key for the nested object
+            images_dict[band] = {
+                #"band_name": band,
                 "resolution": res,
                 "file_url": file_url
-            })
+            }
+
+
+   
+
+     # --- Edit for whole doc of acquisitions ---
+    #images_list = []
+    #for band, res in target_images.items():
+    #    asset_key = f"{band}_{res}" if band not in ["SCL", "TCI"] else band
+    #    asset_obj = item.get('assets', {}).get(asset_key, {})
+    #    file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
+#
+    #    if file_url:
+    #        images_list.append({
+    #            "band_name": band,
+    #            "resolution": res,
+    #            "file_url": file_url
+    #        })
 ###################### ------------------ ####################
     rows.append ({
 
@@ -57,29 +76,43 @@ for item in data:
         'processing_facility':props.get('processing:facility'),
         'city_name':"Rome",
 
- # land data
-        "water_pct": stats.get('water', 0.0),
-        "vegetation_pct": stats.get('vegetation', 0.0),
-        "dark_area_pct": stats.get('dark_area', 0.0),
-        "not_vegetated_pct": stats.get('not_vegetated', 0.0),
-        "nodata_pct": stats.get('nodata', 0.0),
-        "unclassified": stats.get('unclassified',0.0),
-        "snow_pct": item['properties'].get('eo:snow_cover', 0),
-
-
- # clouds data      
+        'acq_quality':{
         "high_proba_clouds": stats.get('high_proba_clouds', 0.0),
         "medium_proba_clouds": stats.get('medium_proba_clouds', 0.0),
         "cloud_shadow": stats.get('cloud_shadow', 0.0),
-        
-## acquisition info
         "thin_cirrus": stats.get('thin_cirrus', 0.0),
         "view_azimuth": props.get('view:sun_azimuth', 0),
         "view_sun_elevation": props.get('view:sun_elevation', 0),
         "view_incidence_angle": props.get('view:incidence_angle', 0),
         "sun_elevation": props.get('view:sun_elevation', 0),
         "orbit_state": props.get('sat:orbit_state', 'descending'),
-         "images": images_list   ## new add
+        "nodata_pct": stats.get('nodata', 0.0),
+        "unclassified": stats.get('unclassified',0.0)
+        },
+
+ # land data
+        "water_pct": stats.get('water', 0.0),
+        "vegetation_pct": stats.get('vegetation', 0.0),
+        "dark_area_pct": stats.get('dark_area', 0.0),
+        "not_vegetated_pct": stats.get('not_vegetated', 0.0),
+        #"nodata_pct": stats.get('nodata', 0.0),
+        #"unclassified": stats.get('unclassified',0.0),
+        "snow_pct": item['properties'].get('eo:snow_cover', 0),
+
+
+ # clouds data      
+        #"high_proba_clouds": stats.get('high_proba_clouds', 0.0),
+        #"medium_proba_clouds": stats.get('medium_proba_clouds', 0.0),
+        #"cloud_shadow": stats.get('cloud_shadow', 0.0),
+        
+## acquisition info
+       # "thin_cirrus": stats.get('thin_cirrus', 0.0),
+       # "view_azimuth": props.get('view:sun_azimuth', 0),
+       # "view_sun_elevation": props.get('view:sun_elevation', 0),
+       # "view_incidence_angle": props.get('view:incidence_angle', 0),
+       # "sun_elevation": props.get('view:sun_elevation', 0),
+       # "orbit_state": props.get('sat:orbit_state', 'descending'),
+         "images": images_dict   ## new add
          })
     
     ### parte vecchia per documenti separati
@@ -118,10 +151,7 @@ land_char=[
     "not_vegetated_pct", "snow_pct"]
 
 acquisitions=[ "acquisition_id", "acquisition_date","acq_month","acq_year", "acq_season", "bbox","city_name", "platform", "gsd", 
-    "grid_code", "instruments", "datatake_id", "processing_facility", "nodata_pct", "unclassified",
-    "high_proba_clouds", "medium_proba_clouds",  "cloud_shadow", "thin_cirrus", 
-      "view_azimuth", "view_sun_elevation", 
-    "view_incidence_angle", "sun_elevation", "orbit_state","images"]
+    "grid_code", "instruments", "datatake_id", "processing_facility","acq_quality","images"]
 
 #images=[ "acquisition_id", "acquisition_date", "images" ]     
      

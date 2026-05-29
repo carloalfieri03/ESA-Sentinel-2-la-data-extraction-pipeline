@@ -25,39 +25,21 @@ for item in data:
     raw_date = props.get('datetime')
     acq_date = datetime.fromisoformat(raw_date.replace('Z', '+00:00')) # date formatting
     month = acq_date.month
+   
 
-
-    images_dict = {}
-    
+     # --- Edit for whole doc of acquisitions ---
+    images_list = []
     for band, res in target_images.items():
         asset_key = f"{band}_{res}" if band not in ["SCL", "TCI"] else band
         asset_obj = item.get('assets', {}).get(asset_key, {})
         file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
 
         if file_url:
-            # Use the band name as the key for the nested object
-            images_dict[band] = {
-                #"band_name": band,
+            images_list.append({
+                "band_name": band,
                 "resolution": res,
                 "file_url": file_url
-            }
-
-
-   
-
-     # --- Edit for whole doc of acquisitions ---
-    #images_list = []
-    #for band, res in target_images.items():
-    #    asset_key = f"{band}_{res}" if band not in ["SCL", "TCI"] else band
-    #    asset_obj = item.get('assets', {}).get(asset_key, {})
-    #    file_url = asset_obj.get('alternate', {}).get('https', {}).get('href')
-#
-    #    if file_url:
-    #        images_list.append({
-    #            "band_name": band,
-    #            "resolution": res,
-    #            "file_url": file_url
-    #        })
+            })
 ###################### ------------------ ####################
     rows.append ({
 
@@ -112,7 +94,7 @@ for item in data:
        # "view_incidence_angle": props.get('view:incidence_angle', 0),
        # "sun_elevation": props.get('view:sun_elevation', 0),
        # "orbit_state": props.get('sat:orbit_state', 'descending'),
-         "images": images_dict   ## new add
+        "images": images_list   ## new add
          })
     
     ### parte vecchia per documenti separati

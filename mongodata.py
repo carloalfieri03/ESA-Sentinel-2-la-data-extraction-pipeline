@@ -44,7 +44,7 @@ for item in data:
     rows.append ({
 
 # satellite acquisitons data
-        "acquisition_id": item.get('id'),
+        "_id": item.get('id'),
         "bbox": item.get('bbox'),       
         "acq_month": month,
         "platform":props.get('platform'),
@@ -128,11 +128,11 @@ for item in data:
 # schema for the mongo collections 
 
 land_char=[
-    "acquisition_id", "acq_month", "acq_year", "acq_season", "bbox","city_name", 
+    "_id", "acq_month", "acq_year", "acq_season", "bbox","city_name", 
     "grid_code",  "water_pct", "vegetation_pct", "dark_area_pct", 
     "not_vegetated_pct", "snow_pct"]
 
-acquisitions=[ "acquisition_id", "acquisition_date","acq_month","acq_year", "acq_season", "bbox","city_name", "platform", "gsd", 
+acquisitions=[ "_id", "acquisition_date","acq_month","acq_year", "acq_season", "bbox","city_name", "platform", "gsd", 
     "grid_code", "instruments", "datatake_id", "processing_facility","acq_quality","images"]
 
 #images=[ "acquisition_id", "acquisition_date", "images" ]     
